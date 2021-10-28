@@ -19,7 +19,7 @@ import (
 const consoleURL = "https://0.0.0.0:8080"
 const consoleDataURL = "https://0.0.0.0:8080/DATA"
 
-func TestDataEndpoint(t *testing.T) {
+func TestConsoleEndpointsInternal(t *testing.T) {
 	ctx, cancelFn := context.WithTimeout(context.Background(), constants.ImagePullingAndResourceCreationTimeout)
 	defer cancelFn()
 
@@ -105,6 +105,8 @@ func testConsoleAccess(t *testing.T, cluster *base.ClusterContext, consoleURL st
 	assert.Assert(t, err)
 	assert.Assert(t, res.StatusCode == expectedReturnCode, "status = %d - expected = %d", res.StatusCode, expectedReturnCode)
 }
+
+
 
 // Test if the endpoint /DATA is accessible in Skupper Public/unauthenticated console
 func testPublicDataEndpointAvailable(t *testing.T) {
