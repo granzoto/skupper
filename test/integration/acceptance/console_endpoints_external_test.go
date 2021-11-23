@@ -119,6 +119,9 @@ func accessConsole(method string, url string, path string, body io.Reader, user 
 	bodyResp, err := ioutil.ReadAll(resp.Body)
 
 	strResp := string(bodyResp)
+	if resp.StatusCode != http.StatusOK {
+		return strResp, fmt.Errorf("Return code %d", resp.StatusCode)
+	}
 
 	return strResp, nil
 }
@@ -149,7 +152,7 @@ func getTokens(consoleUrl string) ([]TokenState, error) {
 
 func createClaimToken(consoleUrl string, minutes int, uses int) (corev1.Secret, error) {
 
-	tokenExpires := time.Now().Add(15 * time.Minute).Format(time.RFC3339)
+	tokenExpires := time.Now().Add(time.Minute * time.Duration(minutes)).Format(time.RFC3339)
 	postPath := fmt.Sprintf("tokens?expiration=%s&uses=%d", tokenExpires, uses)
 
 	tokenCreatedStr, err := accessConsole("POST", consoleUrl, postPath, nil, ADMUSER, ADMPASS)
@@ -248,7 +251,7 @@ func createLink(consoleUrl string, cost int, secret corev1.Secret) error {
 
 	_, err = accessConsole("POST", consoleUrl, postPath, bytes.NewReader(secretSTR), ADMUSER, ADMPASS)
 	if err != nil {
-		return fmt.Errorf("Unable to create token for %s", consoleUrl)
+		return fmt.Errorf("Unable to create token for %s - %s", consoleUrl, err)
 	}
 	return nil
 }
@@ -380,9 +383,14 @@ func CreateBackendDeployment(t *testing.T, cluster *client.VanClient) {
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:            name,
-							Image:           "quay.io/skupper/" + name,
-							ImagePullPolicy: corev1.PullIfNotPresent},
+							Name:  name,
+							Image: "quay.io/skupper/" + name,
+							Ports: []corev1.ContainerPort{{
+								Name:          "8080",
+								ContainerPort: 8080,
+							}},
+							ImagePullPolicy: corev1.PullIfNotPresent,
+						},
 					},
 					RestartPolicy: corev1.RestartPolicyAlways,
 				},
@@ -395,24 +403,24 @@ func CreateBackendDeployment(t *testing.T, cluster *client.VanClient) {
 	assert.Assert(t, err)
 }
 
-func delService(consoleUrl string, serviceName string) (error) {
-	_, err := accessConsole("DELETE", consoleUrl, "services/" + serviceName, nil, ADMUSER, ADMPASS)
+func delService(consoleUrl string, serviceName string) error {
+	_, err := accessConsole("DELETE", consoleUrl, "services/"+serviceName, nil, ADMUSER, ADMPASS)
 	if err != nil {
 		return fmt.Errorf("Unable to delete service %s from %s", serviceName, consoleUrl)
 	}
 	return nil
 }
 
-func delLink(consoleUrl string, linkName string) (error) {
-	_, err := accessConsole("DELETE", consoleUrl, "links/" + linkName, nil, ADMUSER, ADMPASS)
+func delLink(consoleUrl string, linkName string) error {
+	_, err := accessConsole("DELETE", consoleUrl, "links/"+linkName, nil, ADMUSER, ADMPASS)
 	if err != nil {
 		return fmt.Errorf("Unable to delete link %s from %s", linkName, consoleUrl)
 	}
 	return nil
 }
 
-func delToken(consoleUrl string, tokenName string) (error) {
-	_, err := accessConsole("DELETE", consoleUrl, "tokens/" + tokenName, nil, ADMUSER, ADMPASS)
+func delToken(consoleUrl string, tokenName string) error {
+	_, err := accessConsole("DELETE", consoleUrl, "tokens/"+tokenName, nil, ADMUSER, ADMPASS)
 	if err != nil {
 		return fmt.Errorf("Unable to delete claim token %s from %s", tokenName, consoleUrl)
 	}
@@ -490,7 +498,7 @@ func testLinksEndpoints(t *testing.T) {
 	assert.Assert(t, err, "Unable to determine the created link name")
 
 	t.Run("test-retrieve-one-link", func(t *testing.T) {
-		time.Sleep(time.Minute)
+
 		ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 		defer cancelFn()
 
@@ -540,7 +548,7 @@ func testLinksEndpoints(t *testing.T) {
 	assert.Assert(t, err, "Unable to determine the created link name")
 
 	t.Run("test-retrieve-second-link", func(t *testing.T) {
-		ctx, cancelFn := context.WithTimeout(context.Background(), 3 * time.Minute)
+		ctx, cancelFn := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancelFn()
 
 		err = utils.RetryWithContext(ctx, constants.DefaultTick, func() (bool, error) {
@@ -613,11 +621,11 @@ func testServicesEndpoints(t *testing.T) {
 			Ports:       []int{8080},
 			TargetPorts: map[int]int{8080: 8080},
 			Labels:      nil,
-			Target:      ServiceTarget{
-				Name:  "hello-world-backend",
-				Type:  "deployment",
+			Target: ServiceTarget{
+				Name: "hello-world-backend",
+				Type: "deployment",
 				Ports: []PortDescription{
-					{ Name: "8080",
+					{Name: "8080",
 						Port: 8080},
 				},
 			},
@@ -655,7 +663,7 @@ func testServicesEndpoints(t *testing.T) {
 		var oneService ServiceDefinition
 		var err error
 
-		ctx, cancelFn := context.WithTimeout(context.Background(), 3 * time.Minute)
+		ctx, cancelFn := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancelFn()
 
 		err = utils.RetryWithContext(ctx, constants.DefaultTick, func() (bool, error) {
@@ -664,7 +672,7 @@ func testServicesEndpoints(t *testing.T) {
 				fmt.Println("[RG-DEBUG] = ", err)
 				return true, err
 			}
-			return oneService.Name == "hello-world-backend" , nil
+			return oneService.Name == "hello-world-backend", nil
 		})
 		assert.Assert(t, err, "Unable to retrieve details about service hello-world-backend")
 		assert.Assert(t, oneService.Name == "hello-world-backend")
@@ -674,7 +682,7 @@ func testServicesEndpoints(t *testing.T) {
 		var targetsInSvc []ServiceTarget
 		var err error
 
-		ctx, cancelFn := context.WithTimeout(context.Background(), 3 * time.Minute)
+		ctx, cancelFn := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancelFn()
 
 		err = utils.RetryWithContext(ctx, constants.DefaultTick, func() (bool, error) {
@@ -683,10 +691,14 @@ func testServicesEndpoints(t *testing.T) {
 				fmt.Println("[RG-DEBUG] = ", err)
 				return true, err
 			}
-			if len(targetsInSvc) > 0 {
-				return targetsInSvc[0].Name == "hello-world-backend" , nil
+
+			var foundTrgt = false
+			for _, trgt := range targetsInSvc {
+				if trgt.Name == "hello-world-backend" {
+					foundTrgt = true
+				}
 			}
-			return len(targetsInSvc) > 0, nil
+			return foundTrgt, nil
 		})
 		assert.Assert(t, err, "Unable to retrieve targets from service hello-world-backend")
 
@@ -727,7 +739,7 @@ func testGeneralEndpoints(t *testing.T) {
 	})
 }
 
-func testRemoveResources( t *testing.T) {
+func testRemoveResources(t *testing.T) {
 
 	t.Run("test-remove-service hello-world-private", func(t *testing.T) {
 		err := delService(PRIVCONSOLE, "hello-world-backend")
@@ -788,16 +800,32 @@ func TestConsoleEndpointsExternal(t *testing.T) {
 
 	// Test Tokens
 	testTokensEndpoints(t)
+	if t.Failed() {
+		return
+	}
 
 	// Test Links
 	testLinksEndpoints(t)
+	if t.Failed() {
+		return
+	}
 
 	// Test Services and Targets
 	testServicesEndpoints(t)
+	if t.Failed() {
+		return
+	}
 
 	// Test General Endpoints
 	testGeneralEndpoints(t)
+	if t.Failed() {
+		return
+	}
 
 	// Test Removing services
 	testRemoveResources(t)
+	if t.Failed() {
+		return
+	}
+
 }
