@@ -79,6 +79,12 @@ const (
 	ENV_POLICY_NO_GET_WAIT = "SKUPPER_TEST_POLICY_NO_GET_WAIT"
 )
 
+// Private Registry
+const (
+	ENV_EXPECT_QDROUTERD_IMAGE          = "EXPECT_QDROUTERD_IMAGE"
+	ENV_EXPECT_SERVICE_CONTROLLER_IMAGE = "EXPECT_SERVICE_CONTROLLER_IMAGE"
+)
+
 func ShouldSkipNamespaceSetup() bool {
 	_, found := os.LookupEnv(ENV_SKIP_NAMESPACE_SETUP)
 	return found

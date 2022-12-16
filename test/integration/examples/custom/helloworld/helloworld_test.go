@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 	"testing"
-
 	"github.com/skupperproject/skupper/api/types"
+	"github.com/skupperproject/skupper/client"
 	"github.com/skupperproject/skupper/pkg/kube"
 	"github.com/skupperproject/skupper/test/utils/base"
 	"github.com/skupperproject/skupper/test/utils/constants"
@@ -85,6 +85,7 @@ func TestHelloWorldCLI(t *testing.T) {
 	// SkupperCommandTester implementation validates necessary
 	// output or resources in the cluster to certify the command
 	// was executed correctly.
+
 	scenarios := []cli.TestScenario{
 		{
 			Name: "initialize",
@@ -98,6 +99,11 @@ func TestHelloWorldCLI(t *testing.T) {
 						RouterMode:          "interior",
 						EnableConsole:       false,
 						EnableFlowCollector: true,
+						PrivateRegistry:     os.Getenv(client.SkupperImageRegistryEnvKey),
+						EnvVarImages: []string{
+							client.SkupperImageRegistryEnvKey + "=" + os.Getenv(SkupperImageRegistryEnvKey),
+							client.ServiceControllerImageEnvKey + "=" + os.Getenv(client.ServiceControllerImageEnvKey),
+						},
 					},
 					// skupper status - verify initialized as interior
 					&cli.StatusTester{
