@@ -4,11 +4,8 @@
 package helloworld
 
 import (
-	"log"
-	"os"
-	"testing"
-
 	"github.com/skupperproject/skupper/api/types"
+	"github.com/skupperproject/skupper/client"
 	"github.com/skupperproject/skupper/pkg/kube"
 	"github.com/skupperproject/skupper/test/utils/base"
 	"github.com/skupperproject/skupper/test/utils/constants"
@@ -19,6 +16,9 @@ import (
 	"github.com/skupperproject/skupper/test/utils/skupper/cli/token"
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
+	"log"
+	"os"
+	"testing"
 )
 
 // TestHelloWorldCLI is a test that runs the hello-world-example
@@ -85,6 +85,7 @@ func TestHelloWorldCLI(t *testing.T) {
 	// SkupperCommandTester implementation validates necessary
 	// output or resources in the cluster to certify the command
 	// was executed correctly.
+
 	scenarios := []cli.TestScenario{
 		{
 			Name: "initialize",
@@ -97,6 +98,11 @@ func TestHelloWorldCLI(t *testing.T) {
 						ConsolePassword: "internal",
 						RouterMode:      "interior",
 						EnableConsole:   true,
+						PrivateRegistry: os.Getenv(client.SkupperImageRegistryEnvKey),
+						EnvVarImages: []string{
+							client.SkupperImageRegistryEnvKey + "=" + os.Getenv(SkupperImageRegistryEnvKey),
+							client.ServiceControllerImageEnvKey + "=" + os.Getenv(client.ServiceControllerImageEnvKey),
+						},
 					},
 					// skupper status - verify initialized as interior
 					&cli.StatusTester{

@@ -41,6 +41,8 @@ type InitTester struct {
 	ControllerMemoryLimit string
 	SiteName              string
 	EnableConsole         bool
+	PrivateRegistry       string
+	EnvVarImages          []string
 }
 
 func (s *InitTester) Command(cluster *base.ClusterContext) []string {
@@ -101,12 +103,14 @@ func (s *InitTester) Command(cluster *base.ClusterContext) []string {
 	if s.SiteName != "" {
 		args = append(args, "--site-name", s.SiteName)
 	}
+
 	args = append(args, fmt.Sprintf("--enable-console=%v", s.EnableConsole))
+
 	return args
 }
 
 func (s *InitTester) Run(cluster *base.ClusterContext) (stdout string, stderr string, err error) {
-	stdout, stderr, err = RunSkupperCli(s.Command(cluster))
+	stdout, stderr, err = RunSkupperCliWithEnvvars(s.Command(cluster), s.EnvVarImages)
 	if err != nil {
 		return
 	}
@@ -121,6 +125,14 @@ func (s *InitTester) Run(cluster *base.ClusterContext) (stdout string, stderr st
 	log.Println("Waiting on Skupper pods to be running")
 	if err = base.WaitSkupperRunning(cluster); err != nil {
 		return
+	}
+
+	// Validate if a Private Registry is set and expected images also set
+	if s.PrivateRegistry != "" && os.Getenv(base.ENV_EXPECT_QDROUTERD_IMAGE) != "" && os.Getenv(base.ENV_EXPECT_SERVICE_CONTROLLER_IMAGE) != "" {
+		log.Println("Validating private registry")
+		if err = s.ValidatePrivateRegistry(cluster); err != nil {
+			return
+		}
 	}
 
 	// Validating the console based on Init Tester flags
@@ -245,6 +257,29 @@ func (s *InitTester) ValidateConsole(cluster *base.ClusterContext) error {
 
 	return nil
 }
+
+func (s *InitTester) ValidatePrivateRegistry(cluster *base.ClusterContext) error {
+
+	// Router image from private registry
+	routerDeploy, err := cluster.VanClient.KubeClient.AppsV1().Deployments(cluster.Namespace).Get(types.TransportDeploymentName, v1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("Unable to inspect router deployment for image registry settings")
+	}
+	if routerDeploy.Spec.Template.Spec.Containers[0].Image != os.Getenv(base.ENV_EXPECT_QDROUTERD_IMAGE) {
+		return fmt.Errorf("router image was supposed to be %s, but is %s", os.Getenv(base.ENV_EXPECT_QDROUTERD_IMAGE), routerDeploy.Spec.Template.Spec.Containers[0].Image)
+	}
+
+	// Service Controller image, using an specific image, not private registry + default image
+	svcControllerDeploy, err := cluster.VanClient.KubeClient.AppsV1().Deployments(cluster.Namespace).Get(types.ControllerDeploymentName, v1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to inspect service controller deployment for image registry settings")
+	}
+	if svcControllerDeploy.Spec.Template.Spec.Containers[0].Image != os.Getenv(base.ENV_EXPECT_SERVICE_CONTROLLER_IMAGE) {
+		return fmt.Errorf("service controller image was supposed to be %s, but is %s", os.Getenv(base.ENV_EXPECT_SERVICE_CONTROLLER_IMAGE), svcControllerDeploy.Spec.Template.Spec.Containers[0].Image)
+	}
+	return nil
+}
+
 
 func (s *InitTester) ValidateIngress(cluster *base.ClusterContext) error {
 	// If edge mode assert there is no skupper-router service defined

@@ -153,6 +153,12 @@ func runScenarios(t *testing.T, scenarios []TestScenario, parallel bool) {
 // RunSkupperCli executes the skupper binary (assuming it is available
 // in the PATH), returning stdout, stderr and error.
 func RunSkupperCli(args []string) (string, string, error) {
+	return RunSkupperCliWithEnvvars(args, []string{})
+}
+
+// RunSkupperCli executes the skupper binary (assuming it is available
+// in the PATH), returning stdout, stderr and error.
+func RunSkupperCliWithEnvvars(args []string, envVars []string) (string, string, error) {
 
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
@@ -165,6 +171,9 @@ func RunSkupperCli(args []string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, SkupperBinary, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	if len(envVars) > 0 {
+		cmd.Env = envVars
+	}
 
 	// Running the skupper command
 	log.Printf("Running: skupper %s\n", strings.Join(args, " "))
