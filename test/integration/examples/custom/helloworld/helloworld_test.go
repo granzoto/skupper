@@ -4,9 +4,6 @@
 package helloworld
 
 import (
-	"log"
-	"os"
-	"testing"
 	"github.com/skupperproject/skupper/api/types"
 	"github.com/skupperproject/skupper/client"
 	"github.com/skupperproject/skupper/pkg/kube"
@@ -19,6 +16,9 @@ import (
 	"github.com/skupperproject/skupper/test/utils/skupper/cli/token"
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
+	"log"
+	"os"
+	"testing"
 )
 
 // TestHelloWorldCLI is a test that runs the hello-world-example
@@ -101,7 +101,7 @@ func TestHelloWorldCLI(t *testing.T) {
 						EnableFlowCollector: true,
 						PrivateRegistry:     os.Getenv(client.SkupperImageRegistryEnvKey),
 						EnvVarImages: []string{
-							client.SkupperImageRegistryEnvKey + "=" + os.Getenv(SkupperImageRegistryEnvKey),
+							client.SkupperImageRegistryEnvKey + "=" + os.Getenv(client.SkupperImageRegistryEnvKey),
 							client.ServiceControllerImageEnvKey + "=" + os.Getenv(client.ServiceControllerImageEnvKey),
 						},
 					},
