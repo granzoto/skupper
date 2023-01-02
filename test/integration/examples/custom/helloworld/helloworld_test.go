@@ -100,7 +100,7 @@ func TestHelloWorldCLI(t *testing.T) {
 						EnableConsole:   true,
 						PrivateRegistry: os.Getenv(client.SkupperImageRegistryEnvKey),
 						EnvVarImages: []string{
-							client.SkupperImageRegistryEnvKey + "=" + os.Getenv(SkupperImageRegistryEnvKey),
+							client.SkupperImageRegistryEnvKey + "=" + os.Getenv(client.SkupperImageRegistryEnvKey),
 							client.ServiceControllerImageEnvKey + "=" + os.Getenv(client.ServiceControllerImageEnvKey),
 						},
 					},
