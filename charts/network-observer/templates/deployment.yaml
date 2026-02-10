@@ -8,6 +8,10 @@ spec:
   selector:
     matchLabels:
       {{- include "network-observer.selectorLabels" . | nindent 6 }}
+  {{- if .Values.prometheus.persistence.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -75,6 +79,9 @@ spec:
           args:
             - --config.file=/etc/prometheus/prometheus.yml
             - --storage.tsdb.path=/prometheus/
+            {{- range .Values.prometheus.extraArgs }}
+            - {{ . }}
+            {{- end }}
           ports:
             - name: prom
               containerPort: 9090
@@ -86,13 +93,25 @@ spec:
               name: prometheus-config
             - mountPath: /prometheus
               name: prometheus-storage-volume
+            {{- with .Values.prometheus.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
       - configMap:
           defaultMode: 420
           name: {{ include "network-observer.fullname" . }}-prometheus
         name: prometheus-config
+      {{- if .Values.prometheus.persistence.enabled }}
+      - name: prometheus-storage-volume
+        persistentVolumeClaim:
+          claimName: {{ include "network-observer.fullname" . }}-prometheus
+      {{- else }}
       - emptyDir: {}
         name: prometheus-storage-volume
+      {{- end }}
+      {{- with .Values.prometheus.extraVolumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
       - name: skupper-management-client
         secret:
           defaultMode: 420
