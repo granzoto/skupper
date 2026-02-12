@@ -34,9 +34,13 @@ func (l *Link) Apply(current *qdr.RouterConfig) bool {
 		return false
 	}
 	profileName := sslProfileName(l.definition)
+	cost := int32(l.definition.Spec.Cost)
+	if cost < 1 {
+		cost = 1
+	}
 	connector := qdr.Connector{
 		Name:       l.name,
-		Cost:       int32(l.definition.Spec.Cost),
+		Cost:       cost,
 		SslProfile: profileName,
 		Role:       role,
 		Host:       endpoint.Host,

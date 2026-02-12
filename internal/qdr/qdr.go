@@ -1104,10 +1104,16 @@ func (desired Connector) IsLinkConnector() bool {
 }
 
 func (desired Connector) Equivalent(actual Connector) bool {
+	normaliseCost := func(c int32) int32 {
+		if c < 1 {
+			return 1
+		}
+		return c
+	}
 	return desired.Name == actual.Name &&
 		desired.Host == actual.Host &&
 		desired.Port == actual.Port &&
-		desired.Cost == actual.Cost &&
+		normaliseCost(desired.Cost) == normaliseCost(actual.Cost) &&
 		desired.SslProfile == actual.SslProfile
 }
 
