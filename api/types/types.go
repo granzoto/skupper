@@ -69,47 +69,6 @@ const (
 	RouterMaxSessionFramesDefault int    = 640
 )
 
-var TransportPolicyRule = []rbacv1.PolicyRule{
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{""},
-		Resources: []string{"secrets", "pods"},
-	},
-	//needed for collector routine
-	{
-		Verbs:     []string{"get", "list", "watch", "create", "update", "delete"},
-		APIGroups: []string{""},
-		Resources: []string{"configmaps"},
-	},
-	//needed for redeeming token claims
-	{
-		Verbs:     []string{"update", "delete"},
-		APIGroups: []string{""},
-		Resources: []string{"secrets"},
-	},
-	//needed for determining token urls
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{""},
-		Resources: []string{"services"},
-	},
-	{
-		Verbs:     []string{"get"},
-		APIGroups: []string{"apps"},
-		Resources: []string{"deployments"},
-	},
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{"route.openshift.io"},
-		Resources: []string{"routes"},
-	},
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{"networking.k8s.io"},
-		Resources: []string{"ingresses"},
-	},
-}
-
 var TransportPrometheusAnnotations = map[string]string{
 	"prometheus.io/port":   "9090",
 	"prometheus.io/scrape": "true",
@@ -138,73 +97,6 @@ const (
 	PrometheusRoleBindingName            string = "skupper-prometheus"
 	PrometheusRoleName                   string = "skupper-prometheus"
 )
-
-var ControllerPolicyRule = []rbacv1.PolicyRule{
-	{
-		Verbs:     []string{"get", "list", "watch", "create", "update", "delete"},
-		APIGroups: []string{""},
-		Resources: []string{"services", "configmaps", "pods", "secrets"},
-	},
-	{
-		Verbs:     []string{"get", "list", "watch", "create", "update", "delete"},
-		APIGroups: []string{"apps"},
-		Resources: []string{"deployments", "statefulsets"},
-	},
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{"apps"},
-		Resources: []string{"daemonsets"},
-	},
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{"route.openshift.io"},
-		Resources: []string{"routes"},
-	},
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{"apps.openshift.io"},
-		Resources: []string{"deploymentconfigs"},
-	},
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{"networking.k8s.io"},
-		Resources: []string{"ingresses"},
-	},
-}
-
-var ControllerRoutesCustomHostPolicyRule = []rbacv1.PolicyRule{
-	{
-		Verbs:     []string{"get", "list", "watch", "create"},
-		APIGroups: []string{"route.openshift.io"},
-		Resources: []string{"routes/custom-host"},
-	},
-}
-
-var ClusterControllerPolicyRules = []rbacv1.PolicyRule{
-	{
-		APIGroups: []string{"skupper.io"},
-		Resources: []string{"skupperclusterpolicies"},
-		Verbs:     []string{"get", "list", "watch"},
-	},
-	{
-		APIGroups: []string{""},
-		Resources: []string{"namespaces"},
-		Verbs:     []string{"get"},
-	},
-	{
-		APIGroups: []string{""},
-		Resources: []string{"nodes"},
-		Verbs:     []string{"get", "list", "watch"},
-	},
-}
-
-var ClusterControllerExtendedPolicyRules = []rbacv1.PolicyRule{
-	{
-		Verbs:     []string{"get", "list", "watch"},
-		APIGroups: []string{""},
-		Resources: []string{"pods"},
-	},
-}
 
 // Certificates/Secrets constants
 const (
