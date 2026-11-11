@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: behind-proxy
+spec:
+  podSelector: {} # Applies to all pods
+  policyTypes:
+  - Egress
+  egress:
+  # Port 53 for cluster DNS (CoreDNS in kube-system or OpenShift DNS)
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+  # Node local network interception
+  - to:
+    - namespaceSelector: {}

@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: squid-config
+  namespace: proxyns
+data:
+  squid.conf: |
+    # Authentication config
+    # Using shell script with openssl (no setuid/setgid required)
+    auth_param basic program /etc/squid/basic_auth.sh
+    auth_param basic children 5
+    auth_param basic realm Skupper Proxy Test
+    auth_param basic credentialsttl 2 hours
+    acl authenticated_users proxy_auth REQUIRED
+    client_persistent_connections on
+    server_persistent_connections on
+
+    # Network ACLs
+    acl localnet src 10.0.0.0/8
+    acl localnet src 172.16.0.0/12
+    acl localnet src 192.168.0.0/16
+    
+    # Port Security
+    acl SSL_ports port 443
+    acl SSL_ports port 5672
+    acl SSL_ports port 55672
+    acl Safe_ports port 80
+    acl Safe_ports port 443
+    acl Safe_ports port 5672
+    acl Safe_ports port 55672
+   
+    # ACL for CONNECT
+    acl CONNECT method CONNECT
+
+    http_access deny !Safe_ports
+    http_access deny CONNECT !SSL_ports
+
+    # Allow localhost without authentication (for health checks)
+    http_access allow localhost
+
+    # Require authentication for all other traffic
+    http_access allow CONNECT SSL_ports authenticated_users
+    http_access allow authenticated_users
+   
+    # Deny everything else
+    http_access deny all
+    
+    # Listen on port 3128
+    http_port 3128
+   
+    # Disable pinger
+    pinger_enable off
+
+    # Last settings
+    pid_filename /tmp/squid.pid
+    access_log stdio:/dev/stdout
+    cache_log stdio:/dev/stdout
+    cache_store_log none
+    cache deny all
+    debug_options ALL,1

@@ -1,0 +1,65 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-proxy
+  namespace: behind-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: skupper
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector: {}
+  egress:
+  # 1. API SERVER - Open port 443/6443 via IP and system namespaces
+  - ports:
+    - port: 443
+      protocol: TCP
+    - port: 6443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: default
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+
+  # 2. Cluster DNS resolution (CoreDNS in kube-system or OpenShift DNS)
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+
+  # 3. Node local network interception (essential for kube-adaptor proxy resolution)
+  - to:
+    - namespaceSelector: {}
+
+  # 4. Intra-namespace pod communication (Skupper internal traffic)
+  - to:
+    - podSelector: {}
+
+  # 5. Egress to Squid Proxy
+  - ports:
+    - port: 3128
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: proxyns
+    - namespaceSelector:
+        matchLabels:
+          name: proxyns
+
+  # 6. Native Skupper ports (AMQPS and Control)
+  - ports:
+    - port: 5671
+      protocol: TCP
+    - port: 8080
+      protocol: TCP

@@ -1,0 +1,62 @@
+---
+- name: "[ {{ test_identifier }} ] Verify if the namespace exists"
+  kubernetes.core.k8s_info:
+    kind: Namespace
+    name: behind-proxy
+  register: namespace_check
+  failed_when: namespace_check.resources | length == 0
+
+- name: "[ {{ test_identifier }} ] Apply deny-all network policy"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/behind-proxy/06.00-network-policy-deny-all.yaml"
+  register: deny_all_result
+
+- name: "[ {{ test_identifier }} ] Ensure that the deny-all network policy is applied"
+  kubernetes.core.k8s_info:
+    kind: NetworkPolicy
+    name: deny-all
+    namespace: behind-proxy
+  register: deny_all_info
+  failed_when: deny_all_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Apply allow-proxy network policy"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/behind-proxy/06.01-network-policy-allow-proxy.yaml"
+  register: allow_proxy_result
+
+- name: "[ {{ test_identifier }} ] Ensure that the allow-proxy network policy is created"
+  kubernetes.core.k8s_info:
+    kind: NetworkPolicy
+    name: allow-proxy
+    namespace: behind-proxy
+  register: allow_proxy_info
+  failed_when: allow_proxy_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Apply allow-dns network policy"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/behind-proxy/06.02-network-policy-allow-dns.yaml"
+  register: allow_internal_apps_result
+
+- name: "[ {{ test_identifier }} ] Get all network policies in behind-proxy namespace"
+  kubernetes.core.k8s_info:
+    kind: NetworkPolicy
+    namespace: behind-proxy
+  register: all_policies
+
+- name: "[ {{ test_identifier }} ] Validate network policy configuration"
+  assert:
+    that:
+      - deny_all_info.resources | length == 1
+      - allow_proxy_info.resources | length == 1
+      - deny_all_info.resources[0].spec.policyTypes | length == 2
+      - "'Ingress' in deny_all_info.resources[0].spec.policyTypes"
+      - "'Egress' in deny_all_info.resources[0].spec.policyTypes"
+    success_msg: "Network policies validated successfully"
+    fail_msg: "Network policy validation failed"

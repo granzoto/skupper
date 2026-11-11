@@ -1,0 +1,43 @@
+---
+- name: "[ {{ test_identifier }} ] Verify if the namespace exists"
+  kubernetes.core.k8s_info:
+    kind: Namespace
+    name: behind-proxy
+  register: namespace_check
+  failed_when: false
+
+- name: "[ {{ test_identifier }} ] Delete allow-proxy network policy"
+  kubernetes.core.k8s:
+    state: absent
+    src: "{{ playbook_dir }}/resources/behind-proxy/06.01-network-policy-allow-proxy.yaml"
+  register: allow_proxy_delete_result
+  when: namespace_check.resources | length > 0
+
+- name: "[ {{ test_identifier }} ] Ensure that the allow-proxy network policy is deleted"
+  kubernetes.core.k8s_info:
+    kind: NetworkPolicy
+    name: allow-proxy
+    namespace: behind-proxy
+  register: allow_proxy_info
+  until: allow_proxy_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+  when: namespace_check.resources | length > 0
+
+- name: "[ {{ test_identifier }} ] Delete deny-all network policy"
+  kubernetes.core.k8s:
+    state: absent
+    src: "{{ playbook_dir }}/resources/behind-proxy/06.00-network-policy-deny-all.yaml"
+  register: deny_all_delete_result
+  when: namespace_check.resources | length > 0
+
+- name: "[ {{ test_identifier }} ] Ensure that the deny-all network policy is deleted"
+  kubernetes.core.k8s_info:
+    kind: NetworkPolicy
+    name: deny-all
+    namespace: behind-proxy
+  register: deny_all_info
+  until: deny_all_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+  when: namespace_check.resources | length > 0

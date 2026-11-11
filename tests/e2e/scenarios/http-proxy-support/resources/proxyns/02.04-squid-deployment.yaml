@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squid
+  namespace: proxyns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: squid
+  template:
+    metadata:
+      labels:
+        app: squid
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: fix-auth-permissions
+        image: ubuntu/squid:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Copy passwd file
+          cp /tmp/auth/passwd /etc/squid/auth/passwd
+          chmod 644 /etc/squid/auth/passwd
+        volumeMounts:
+        - name: auth-volume
+          mountPath: /tmp/auth/
+          readOnly: true
+        - name: auth-volume-writable
+          mountPath: /etc/squid/auth/
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      containers:
+      - name: squid
+        image: ubuntu/squid:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "Waiting for volume mounts to be ready..."
+          # Wait for all required files to exist
+          for i in 1 2 3 4 5; do
+            if [ -f /etc/squid/basic_auth.sh ] && [ -f /etc/squid/squid.conf ] && [ -f /etc/squid/auth/passwd ]; then
+              echo "All files present, starting Squid..."
+              break
+            fi
+            echo "Waiting for files... (attempt $i)"
+            sleep 2
+          done
+          
+          if [ ! -f /etc/squid/basic_auth.sh ]; then
+            echo "FATAL: Auth script not found"
+            exit 1
+          fi
+          
+          # Start Squid in foreground mode with explicit path
+          exec /usr/sbin/squid -N -f /etc/squid/squid.conf
+        ports:
+        - containerPort: 3128
+        volumeMounts:
+        - name: squid-config-volume
+          mountPath: /etc/squid/squid.conf
+          subPath: squid.conf
+        - name: auth-volume-writable
+          mountPath: /etc/squid/auth/
+          readOnly: true
+        - name: shell-auth-helper-volume
+          mountPath: /etc/squid/basic_auth.sh
+          subPath: basic_auth.sh
+          readOnly: true
+        - name: var-run
+          mountPath: /var/run/squid
+        - name: var-log
+          mountPath: /var/log/squid
+        - name: var-spool
+          mountPath: /var/spool/squid
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: squid-config-volume
+        configMap:
+          name: squid-config
+      - name: auth-volume
+        secret:
+          secretName: squid-auth
+      - name: shell-auth-helper-volume
+        configMap:
+          name: shell-auth-helper
+          defaultMode: 0755
+      - name: auth-volume-writable
+        emptyDir: {}
+      - name: var-run
+        emptyDir: {}
+      - name: var-log
+        emptyDir: {}
+      - name: var-spool
+        emptyDir: {}

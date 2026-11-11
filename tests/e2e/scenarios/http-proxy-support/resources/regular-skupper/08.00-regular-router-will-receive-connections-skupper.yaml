@@ -1,0 +1,9 @@
+apiVersion: skupper.io/v2alpha1
+kind: Site
+metadata:
+  name: regular-skupper-receive-connection
+  namespace: regular-skupper
+spec:
+  linkAccess: default
+  settings:
+    router-mtu: "1350"

@@ -1,0 +1,94 @@
+---
+- name: "[ {{ test_identifier }} ] Delete the Squid service"
+  kubernetes.core.k8s:
+    state: absent
+    src: "{{ playbook_dir }}/resources/proxyns/02.05-squid-service.yaml"
+  register: squid_service_delete_result
+
+- name: "[ {{ test_identifier }} ] Ensure that the Squid service is deleted"
+  kubernetes.core.k8s_info:
+    kind: Service
+    name: squid-svc
+    namespace: "{{ namespace }}"
+  register: squid_service_info
+  until: squid_service_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Delete Squid deployment"
+  kubernetes.core.k8s:
+    state: absent
+    src: "{{ playbook_dir }}/resources/proxyns/02.04-squid-deployment.yaml"
+  register: squid_deployment_delete_result
+
+- name: "[ {{ test_identifier }} ] Ensure Squid deployment is deleted"
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: squid
+    namespace: "{{ namespace }}"
+  register: squid_deployment_info
+  until: squid_deployment_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Ensure Squid pods are deleted"
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors:
+      - app=squid
+  register: squid_pod_info
+  until: squid_pod_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Delete shell authentication helper ConfigMap"
+  kubernetes.core.k8s:
+    state: absent
+    src: "{{ playbook_dir }}/resources/proxyns/02.02-shell-auth-helper.yaml"
+  register: shell_auth_helper_delete_result
+
+- name: "[ {{ test_identifier }} ] Ensure shell auth helper ConfigMap is deleted"
+  kubernetes.core.k8s_info:
+    kind: ConfigMap
+    name: shell-auth-helper
+    namespace: "{{ namespace }}"
+  register: shell_auth_helper_info
+  until: shell_auth_helper_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Delete Squid configuration ConfigMap"
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: ConfigMap
+    name: squid-config
+    namespace: "{{ namespace }}"
+  register: squid_config_delete_result
+
+- name: "[ {{ test_identifier }} ] Ensure Squid config ConfigMap is deleted"
+  kubernetes.core.k8s_info:
+    kind: ConfigMap
+    name: squid-config
+    namespace: "{{ namespace }}"
+  register: squid_config_info
+  until: squid_config_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Delete Squid authentication secret"
+  kubernetes.core.k8s:
+    state: absent
+    src: "{{ playbook_dir }}/resources/proxyns/02.01-squid-auth-secret.yaml"
+  register: squid_secret_delete_result
+
+- name: "[ {{ test_identifier }} ] Ensure Squid authentication secret is deleted"
+  kubernetes.core.k8s_info:
+    kind: Secret
+    name: squid-auth
+    namespace: "{{ namespace }}"
+  register: squid_secret_info
+  until: squid_secret_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"

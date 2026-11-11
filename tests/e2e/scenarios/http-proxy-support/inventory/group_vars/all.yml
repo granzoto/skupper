@@ -1,0 +1,10 @@
+---
+ansible_connection: local
+ansible_user: "{{ lookup('env', 'USER') }}"
+debug: false
+namespace_prefix: "e2e"
+generate_namespaces_namespace_label: "proxy-support"
+remove_namespaces: true
+resource_retry_value: 30
+resource_delay_value: 10
+min_verbosity: 1

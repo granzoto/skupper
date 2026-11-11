@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-skupper
+  namespace: proxyns # <--- MUST BE APPLIED HERE
+spec:
+  podSelector:
+    matchLabels:
+      app: squid # Target your Squid Pod label
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: behind-proxy
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/part-of: skupper
+    - namespaceSelector:
+        matchLabels:
+          name: behind-proxy
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/part-of: skupper
+    ports:
+    - port: 3128
+      protocol: TCP

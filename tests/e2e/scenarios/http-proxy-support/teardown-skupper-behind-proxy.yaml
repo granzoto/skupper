@@ -1,0 +1,34 @@
+---
+- name: "[ {{ test_identifier }} ] Delete Skupper Site behind proxy"
+  kubernetes.core.k8s:
+    state: absent
+    api_version: skupper.io/v2alpha1
+    kind: Site
+    namespace: behind-proxy
+    name: "{{ item }}"
+  loop:
+    - skupper-behind-proxy-unauthenticated
+    - skupper-behind-proxy-authenticated
+    - skupper-behind-proxy
+  register: behind_proxy_skupper_site_delete_result
+
+- name: "[ {{ test_identifier }} ] Ensure Skupper Site behind proxy is deleted"
+  kubernetes.core.k8s_info:
+    api_version: skupper.io/v2alpha1
+    kind: Site
+    namespace: behind-proxy
+  register: behind_proxy_skupper_site_info
+  until: behind_proxy_skupper_site_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Ensure all Skupper pods behind proxy are deleted"
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: behind-proxy
+    label_selectors:
+      - "app.kubernetes.io/part-of=skupper"
+  register: behind_proxy_skupper_pods
+  until: behind_proxy_skupper_pods.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"

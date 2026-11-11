@@ -1,0 +1,33 @@
+- name: "[ {{ test_identifier }} ] Deploy regular Skupper Site"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/regular-skupper/08.00-regular-router-will-receive-connections-skupper.yaml"
+
+- name: "[ {{ test_identifier }} ] Verify if the regular Skupper Site and Pods are ready"
+  block:
+    - name: "[ {{ test_identifier }} ] Wait for Skupper Site to be ready"
+      kubernetes.core.k8s_info:
+        api_version: skupper.io/v2alpha1
+        kind: Site
+        namespace: "regular-skupper"
+        name: "regular-skupper-receive-connection"
+      register: regular_skupper_site
+      until: >
+        regular_skupper_site.resources | length > 0 and
+        regular_skupper_site.resources[0].status is defined and
+        regular_skupper_site.resources[0].status.conditions is defined
+      retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+      delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+    - name: "[ {{ test_identifier }} ] Wait for all Skupper pods to be running"
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "regular-skupper"
+        label_selectors:
+          - "app.kubernetes.io/part-of=skupper"
+      register: regular_skupper_pods
+      until: >
+        regular_skupper_pods.resources | length > 0 and
+        regular_skupper_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == regular_skupper_pods.resources | length
+      retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+      delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"

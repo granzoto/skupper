@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-proxy-configuration-unauthenticated
+  namespace: behind-proxy
+type: kubernetes.io/basic-auth
+stringData:
+  host: "squid-svc.proxyns.svc.cluster.local"
+  port: "3128"
+  username: ""
+  password: ""
+

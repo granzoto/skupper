@@ -1,0 +1,483 @@
+---
+- name: Skupper HTTP Proxy Support test (Unauthenticated and Authenticated)
+  hosts: all
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    kubeconfig: kubeconfig
+    test_identifier: "HTTPProxySupport"
+    namespace: proxyns
+    kubectl_timeout: 300
+    target_user: "skupperuser"
+
+  tasks:
+    - name: "[ {{ test_identifier }} ] Main HTTP Proxy Support test block"
+      block:
+        # =====================================================================
+        # 1. SHARED INFRASTRUCTURE SETUP
+        # =====================================================================
+        - name: "[ {{ test_identifier }} - Setup ] Apply namespace configuration"
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ playbook_dir }}/resources/01-namespace.yaml"
+            kubeconfig: "{{ kubeconfig }}"
+          register: namespace_result
+          when: inventory_hostname == 'proxyns'
+
+        - name: "[ {{ test_identifier }} - Setup ] Verify namespaces are created"
+          kubernetes.core.k8s_info:
+            kind: Namespace
+            name: "{{ item }}"
+            kubeconfig: "{{ kubeconfig }}"
+          register: namespace_info
+          failed_when: namespace_info.resources | length == 0
+          loop:
+            - proxyns
+            - behind-proxy
+            - regular-skupper
+          retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+          delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+          when: inventory_hostname == 'proxyns'
+
+        - name: "[ {{ test_identifier }} - Setup ] Import Squid Proxy setup with unauthenticated config"
+          include_tasks: setup-squid-proxy.yaml
+          vars:
+            resourcepath: "/resources/proxyns/02.03-squid-config-unauthenticated.yaml"
+          when: inventory_hostname == 'proxyns'
+
+        # Regular Skupper - Will receive connections
+        - name: "[ {{ test_identifier }} - Setup ] Import Regular Skupper setup"
+          include_tasks: setup-regular-skupper.yaml
+          when: inventory_hostname == 'regular-skupper'
+
+        # Skupper Behind Proxy
+        - name: "[ {{ test_identifier }} - Setup ] Import Skupper Behind Proxy setup"
+          include_tasks: setup-skupper-behind-proxy.yaml
+          vars:
+            resourcepath: "/resources/behind-proxy/08.02-skupper-with-proxy-feature-unauthenticated.yaml"
+            skupper_behind_proxy_name: "skupper-behind-proxy-unauthenticated"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        # Network Policy Setup
+        - name: "[ {{ test_identifier }} - Setup ] Import Network Policy setup"
+          import_tasks: setup-network-policy.yaml
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        # =====================================================================
+        # 2. PHASE 1: UNAUTHENTICATED PROXY TEST
+        # =====================================================================
+        - name: "[ {{ test_identifier }} - Phase 1 ] Apply proxy-profile secret for unauthenticated proxy"
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ playbook_dir }}/resources/behind-proxy/08.03-my-proxy-configuration-unauthenticated.yaml"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+          
+        - name: "[ {{ test_identifier }} - Phase 1 ] Verify unauthenticated proxy-profile secret is created"
+          kubernetes.core.k8s_info:
+            kind: Secret
+            name: my-proxy-configuration-unauthenticated
+            namespace: "behind-proxy"
+            kubeconfig: "{{ kubeconfig }}"
+          register: proxy_profile_secret_result
+          failed_when: proxy_profile_secret_result.resources | length == 0
+          retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+          delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Generate Link from behind-proxy to regular-skupper"
+          skupper.v2.token:
+            name: "link-from-behind-to-regular-via-unauthenticated-proxy"
+            namespace: "regular-skupper"
+            type: link
+            kubeconfig: "{{ kubeconfig }}"
+          register: link_from_behind_to_regular_via_unauthenticated_proxy_output
+          when: inventory_hostname == 'regular-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Export link token as YAML"
+          copy:
+            content: "{{ hostvars['regular-skupper']['link_from_behind_to_regular_via_unauthenticated_proxy_output']['token'] }}"
+            dest: "/tmp/link-from-behind-to-regular-via-proxy-with-unauthenticated-proxy-profile.yaml"
+          delegate_to: "{{ inventory_hostname }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Add unauthenticated proxy profile to link definition"
+          ansible.builtin.replace:
+            path: "/tmp/link-from-behind-to-regular-via-proxy-with-unauthenticated-proxy-profile.yaml"
+            regexp: '(?m)^spec:'
+            replace: "spec:\n  settings:\n    proxy-configuration: my-proxy-configuration-unauthenticated"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Display modified Link definition"
+          ansible.builtin.command: "cat /tmp/link-from-behind-to-regular-via-proxy-with-unauthenticated-proxy-profile.yaml"
+          register: link_file_content_p1
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Debug modified Link YAML"
+          ansible.builtin.debug:
+            var: link_file_content_p1.stdout_lines
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Apply Link to behind-proxy"
+          skupper.v2.resource:
+            namespace: behind-proxy
+            path: "/tmp/link-from-behind-to-regular-via-proxy-with-unauthenticated-proxy-profile.yaml"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Wait for unauthenticated link to reach Ready state"
+          kubernetes.core.k8s_info:
+            api_version: skupper.io/v2alpha1
+            kind: Link
+            namespace: "behind-proxy"
+            name: "link-from-behind-to-regular-via-unauthenticated-proxy"
+            kubeconfig: "{{ kubeconfig }}"
+          register: link_status_p1
+          until:
+            - link_status_p1.resources | length > 0
+            - link_status_p1.resources[0].status is defined
+            - link_status_p1.resources[0].status.status == 'Ready'
+          retries: 20
+          delay: 5
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Display Link spec in Kubernetes"
+          ansible.builtin.debug:
+            var: link_status_p1.resources[0].spec
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Retrieve Skupper Router Logs behind proxy"
+          kubernetes.core.k8s_log:
+            namespace: "behind-proxy"
+            label_selectors:
+              - "app.kubernetes.io/name=skupper-router"
+            container: router
+            kubeconfig: "{{ kubeconfig }}"
+          register: skupper_router_logs_p1
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Display Skupper Router Logs"
+          ansible.builtin.debug:
+            var: skupper_router_logs_p1.log
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Retrieve Proxy Logs"
+          kubernetes.core.k8s_log:
+            namespace: "proxyns"
+            label_selectors:
+              - "app=squid"
+            container: squid
+            kubeconfig: "{{ kubeconfig }}"
+          register: squid_logs_p1
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Display retrieved Proxy Logs"
+          ansible.builtin.debug:
+            var: squid_logs_p1.log
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Ensure the user is not listed in proxy logs"
+          ansible.builtin.set_fact:
+            user_not_found: "{{ target_user not in squid_logs_p1.log }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Display results for unauthenticated test"
+          ansible.builtin.debug:
+            msg: >
+              Phase 1 Success: Link established through unauthenticated proxy with no authentication messages for '{{ target_user }}'.
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - user_not_found
+
+        - name: "[ {{ test_identifier }} - Phase 1 ] Fail if user is found in proxy logs"
+          ansible.builtin.fail:
+            msg: "Phase 1 Failure: User '{{ target_user }}' was found in proxy logs."
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - not user_not_found
+
+        # =====================================================================
+        # 3. INTERMEDIATE TRANSITION (Clean Phase 1 Link/Secret & Switch Squid Config)
+        # =====================================================================
+        - name: "[ {{ test_identifier }} - Transition ] Delete Phase 1 Link"
+          kubernetes.core.k8s:
+            state: absent
+            api_version: skupper.io/v2alpha1
+            kind: Link
+            name: "link-from-behind-to-regular-via-unauthenticated-proxy"
+            namespace: "behind-proxy"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Transition ] Ensure Phase 1 Link is deleted"
+          kubernetes.core.k8s_info:
+            api_version: skupper.io/v2alpha1
+            kind: Link
+            namespace: "behind-proxy"
+            name: "link-from-behind-to-regular-via-unauthenticated-proxy"
+            kubeconfig: "{{ kubeconfig }}"
+          register: deleted_link_info
+          until: deleted_link_info.resources | length == 0
+          retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+          delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Transition ] Delete Phase 1 unauthenticated proxy secret"
+          kubernetes.core.k8s:
+            state: absent
+            kind: Secret
+            name: my-proxy-configuration-unauthenticated
+            namespace: "behind-proxy"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Transition ] Update Squid ConfigMap to authenticated"
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ playbook_dir }}/resources/proxyns/02.03-squid-config-authenticated.yaml"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'proxyns'
+
+        - name: "[ {{ test_identifier }} - Transition ] Restart Squid Pod to load authenticated config"
+          kubernetes.core.k8s:
+            state: absent
+            kind: Pod
+            namespace: "proxyns"
+            label_selectors:
+              - "app=squid"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'proxyns'
+
+        - name: "[ {{ test_identifier }} - Transition ] Wait for new Squid Pod to be Running and Ready"
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: "proxyns"
+            label_selectors:
+              - "app=squid"
+            kubeconfig: "{{ kubeconfig }}"
+          register: squid_restarted_pod
+          until:
+            - squid_restarted_pod.resources | length == 1
+            - squid_restarted_pod.resources[0].metadata.deletionTimestamp is not defined
+            - squid_restarted_pod.resources[0].status.phase == 'Running'
+            - squid_restarted_pod.resources[0].status.containerStatuses is defined
+            - squid_restarted_pod.resources[0].status.containerStatuses[0].ready
+          retries: 30
+          delay: 3
+          when: inventory_hostname == 'proxyns'
+
+        # =====================================================================
+        # 4. PHASE 2: AUTHENTICATED PROXY TEST
+        # =====================================================================
+        - name: "[ {{ test_identifier }} - Phase 2 ] Apply proxy-profile secret for authenticated proxy"
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ playbook_dir }}/resources/behind-proxy/08.03-my-proxy-configuration-with-correct-password.yaml"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+          
+        - name: "[ {{ test_identifier }} - Phase 2 ] Verify authenticated proxy-profile secret is created"
+          kubernetes.core.k8s_info:
+            kind: Secret
+            name: my-proxy-configuration-authenticated
+            namespace: "behind-proxy"
+            kubeconfig: "{{ kubeconfig }}"
+          register: proxy_profile_secret_result_p2
+          failed_when: proxy_profile_secret_result_p2.resources | length == 0
+          retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+          delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Generate Link from behind-proxy to regular-skupper"
+          skupper.v2.token:
+            name: "link-from-behind-to-regular-via-authenticated-proxy"
+            namespace: "regular-skupper"
+            type: link
+            kubeconfig: "{{ kubeconfig }}"
+          register: link_from_behind_to_regular_via_authenticated_proxy_output
+          when: inventory_hostname == 'regular-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Export link token as YAML"
+          copy:
+            content: "{{ hostvars['regular-skupper']['link_from_behind_to_regular_via_authenticated_proxy_output']['token'] }}"
+            dest: "/tmp/link-from-behind-to-regular-via-proxy-with-authenticated-proxy-profile.yaml"
+          delegate_to: "{{ inventory_hostname }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Add authenticated proxy profile to link definition"
+          ansible.builtin.replace:
+            path: "/tmp/link-from-behind-to-regular-via-proxy-with-authenticated-proxy-profile.yaml"
+            regexp: '(?m)^spec:'
+            replace: "spec:\n  settings:\n    proxy-configuration: my-proxy-configuration-authenticated"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Display modified Link definition"
+          ansible.builtin.command: "cat /tmp/link-from-behind-to-regular-via-proxy-with-authenticated-proxy-profile.yaml"
+          register: link_file_content_p2
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Debug modified Link YAML"
+          ansible.builtin.debug:
+            var: link_file_content_p2.stdout_lines
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Apply Link to behind-proxy"
+          skupper.v2.resource:
+            namespace: behind-proxy
+            path: "/tmp/link-from-behind-to-regular-via-proxy-with-authenticated-proxy-profile.yaml"
+            kubeconfig: "{{ kubeconfig }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Wait for authenticated link to reach Ready state"
+          kubernetes.core.k8s_info:
+            api_version: skupper.io/v2alpha1
+            kind: Link
+            namespace: "behind-proxy"
+            name: "link-from-behind-to-regular-via-authenticated-proxy"
+            kubeconfig: "{{ kubeconfig }}"
+          register: link_status_p2
+          until:
+            - link_status_p2.resources | length > 0
+            - link_status_p2.resources[0].status is defined
+            - link_status_p2.resources[0].status.status == 'Ready'
+          retries: 20
+          delay: 5
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Display Link spec in Kubernetes"
+          ansible.builtin.debug:
+            var: link_status_p2.resources[0].spec
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Retrieve Skupper Router Logs behind proxy"
+          kubernetes.core.k8s_log:
+            namespace: "behind-proxy"
+            label_selectors:
+              - "app.kubernetes.io/name=skupper-router"
+            container: router
+            kubeconfig: "{{ kubeconfig }}"
+          register: skupper_router_logs_p2
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Display Skupper Router Logs"
+          ansible.builtin.debug:
+            var: skupper_router_logs_p2.log
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Wait for authenticated user to appear in proxy logs"
+          kubernetes.core.k8s_log:
+            namespace: "proxyns"
+            label_selectors:
+              - "app=squid"
+            container: squid
+            kubeconfig: "{{ kubeconfig }}"
+          register: squid_logs_p2
+          until: target_user in squid_logs_p2.log
+          retries: 15
+          delay: 3
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Display retrieved Proxy Logs"
+          ansible.builtin.debug:
+            var: squid_logs_p2.log
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - debug | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Ensure the user is listed in proxy logs"
+          ansible.builtin.set_fact:
+            user_found: "{{ target_user in squid_logs_p2.log }}"
+          when: inventory_hostname == 'behind-proxy-skupper'
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Display results for authenticated test"
+          ansible.builtin.debug:
+            msg: >
+              Phase 2 Success: Link established through authenticated proxy with verified authentication for '{{ target_user }}'.
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - user_found
+
+        - name: "[ {{ test_identifier }} - Phase 2 ] Fail if user is NOT found in proxy logs"
+          ansible.builtin.fail:
+            msg: "Phase 2 Failure: User '{{ target_user }}' was NOT found in proxy logs."
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - not user_found
+
+      # =======================================================================
+      # 5. GLOBAL TEARDOWN
+      # =======================================================================
+      always:
+        - name: "[ {{ test_identifier }} - Teardown ] Import Squid Proxy teardown"
+          include_tasks: teardown-squid-proxy.yaml
+          when:
+            - inventory_hostname == 'proxyns'
+            - not skip_teardown | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Teardown ] Import Network Policy teardown"
+          include_tasks: teardown-network-policy.yaml
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - not skip_teardown | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Teardown ] Import Regular Skupper teardown"
+          include_tasks: teardown-regular-skupper.yaml
+          when:
+            - inventory_hostname == 'regular-skupper'
+            - not skip_teardown | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Teardown ] Import Skupper Behind Proxy teardown"
+          include_tasks: teardown-skupper-behind-proxy.yaml
+          when:
+            - inventory_hostname == 'behind-proxy-skupper'
+            - not skip_teardown | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Teardown ] Delete namespaces"
+          kubernetes.core.k8s:
+            state: absent
+            src: "{{ playbook_dir }}/resources/01-namespace.yaml"
+            kubeconfig: "{{ kubeconfig }}"
+          register: namespace_delete_result
+          run_once: true
+          when:
+            - not skip_teardown | default(false) | bool
+
+        - name: "[ {{ test_identifier }} - Teardown ] Verify namespaces are deleted"
+          kubernetes.core.k8s_info:
+            kind: Namespace
+            name: "{{ item }}"
+            kubeconfig: "{{ kubeconfig }}"
+          register: deleted_namespace_info
+          until: deleted_namespace_info.resources | length == 0
+          retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+          delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+          loop:
+            - proxyns
+            - behind-proxy
+            - regular-skupper
+          run_once: true
+          when:
+            - not skip_teardown | default(false) | bool

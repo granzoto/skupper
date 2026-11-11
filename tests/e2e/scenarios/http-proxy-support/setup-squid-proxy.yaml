@@ -1,0 +1,135 @@
+# Note: squid-auth and shell-auth-helper are created for both test modes because
+# 02.04-squid-deployment.yaml mounts them. Authentication is enabled/disabled via
+# the squid-config ConfigMap (resourcepath variable).
+- name: "[ {{ test_identifier }} ] Apply Squid authentication secret"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/proxyns/02.01-squid-auth-secret.yaml"
+  register: secret_result
+
+- name: "[ {{ test_identifier }} ] Verify secret is created"
+  kubernetes.core.k8s_info:
+    kind: Secret
+    name: squid-auth
+    namespace: "{{ namespace }}"
+  register: secret_info
+  failed_when: secret_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Apply shell authentication helper ConfigMap"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/proxyns/02.02-shell-auth-helper.yaml"
+  register: auth_helper_result
+
+- name: "[ {{ test_identifier }} ] Verify shell auth helper ConfigMap is created"
+  kubernetes.core.k8s_info:
+    kind: ConfigMap
+    name: shell-auth-helper
+    namespace: "{{ namespace }}"
+  register: auth_helper_info
+  failed_when: auth_helper_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Apply Squid configuration ConfigMap"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}{{ resourcepath }}"
+  register: config_result
+
+- name: "[ {{ test_identifier }} ] Verify Squid config ConfigMap is created"
+  kubernetes.core.k8s_info:
+    kind: ConfigMap
+    name: squid-config
+    namespace: "{{ namespace }}"
+  register: config_info
+  failed_when: config_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Deploy Squid Proxy"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/proxyns/02.04-squid-deployment.yaml"
+  register: deployment_result
+
+- name: "[ {{ test_identifier }} ] Wait for Squid deployment to be available"
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: squid
+    namespace: "{{ namespace }}"
+  register: deployment_info
+  until: >
+    deployment_info.resources | length > 0 and
+    deployment_info.resources[0].status.availableReplicas is defined and
+    deployment_info.resources[0].status.availableReplicas == 1
+  retries: 30
+  delay: 10
+  failed_when: >
+    deployment_info.resources | length == 0 or
+    deployment_info.resources[0].status.availableReplicas is not defined or
+    deployment_info.resources[0].status.availableReplicas != 1
+
+- name: "[ {{ test_identifier }} ] Verify Squid pods are running"
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ namespace }}"
+    label_selectors:
+      - app=squid
+  register: pod_info
+  failed_when: >
+    pod_info.resources | length == 0 or
+    pod_info.resources[0].status.phase != 'Running'
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"  
+
+- name: "[ {{ test_identifier }} ] Create the Squid service"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/proxyns/02.05-squid-service.yaml"
+  register: service_result
+
+- name: "[ {{ test_identifier }} ] Ensure that the Squid service is created"
+  kubernetes.core.k8s_info:
+    kind: Service
+    name: squid-svc
+    namespace: "{{ namespace }}"
+  register: service_info
+  failed_when: service_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+
+- name: "[ {{ test_identifier }} ] Ensure that the service endpoints are ready"
+  kubernetes.core.k8s_info:
+    kind: Endpoints
+    name: squid-svc
+    namespace: "{{ namespace }}"
+  register: endpoints_info
+  until: >
+    endpoints_info.resources | length > 0 and
+    endpoints_info.resources[0].subsets is defined and
+    endpoints_info.resources[0].subsets | length > 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
+  failed_when: >
+    endpoints_info.resources | length == 0 or
+    endpoints_info.resources[0].subsets is not defined or
+    endpoints_info.resources[0].subsets | length == 0
+
+- name: "[ {{ test_identifier }} ] Apply allow-ingress-from-skupper network policy"
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/resources/proxyns/02.06-allow-ingress-from-skupper.yaml"
+  register: allow_ingress_result
+
+- name: "[ {{ test_identifier }} ] Ensure that the allow-ingress-from-skupper network policy is applied"
+  kubernetes.core.k8s_info:
+    kind: NetworkPolicy
+    name: allow-ingress-from-skupper
+    namespace: proxyns
+  register: allow_ingress_info
+  failed_when: allow_ingress_info.resources | length == 0
+  retries: "{{ resource_retry_value * RESOURCE_RETRY_MULTIPLIER }}"
+  delay: "{{ resource_delay_value * RESOURCE_DELAY_MULTIPLIER }}"
